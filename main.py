@@ -7,15 +7,14 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 from model import NADE
 
-def train(train_loader, loss_function, optimizer, model):
+def train(train_loader, loss_function, optimizer, model, device):
     model.train()
     total_loss = 0.0
-    batch_size = train_loader.batch_size
     for i, (imgs, _) in enumerate(train_loader):
         
         optimizer.zero_grad()
         # preprocess to binary
-        inputs = imgs.view(batch_size, -1).gt(0.).float().to(device)
+        inputs = imgs.view(imgs.size(0), -1).gt(0.).float().to(device)
         x_hat = model(inputs)
         loss = loss_function(x_hat, inputs)
         loss.backward()
@@ -25,11 +24,11 @@ def train(train_loader, loss_function, optimizer, model):
         total_loss += loss.item()
         
         if i % 100 == 0:
-            print(f"\t[{i*batch_size/len(train_loader.dataset)*100:.2f}%] loss: {loss/batch_size:.4f}")
+            print(f"\t[{i*imgs.size(0)/len(train_loader.dataset)*100:.2f}%] loss: {loss/imgs.size(0):.4f}")
             
     return total_loss
 
-def test(test_loader, loss_function, model):
+def test(test_loader, loss_function, model, device):
     model.eval()
     total_loss = 0.0
     with torch.no_grad():
@@ -75,7 +74,7 @@ def main(draw=False):
     model = NADE(input_dim=784, hidden_dim=500).to(device)
     loss_function = nn.BCELoss(reduction="sum")
     optimizer = optim.Adam(model.parameters())
-    scheduler = optim.lr_scheduler.StepLR(optimizer, 15, gamma=0.001)
+    scheduler = optim.lr_scheduler.StepLR(optimizer, 15, gamma=0.1)
     
     # start main
     train_losses = []
@@ -84,8 +83,8 @@ def main(draw=False):
     wait = 0
     for step in range(n_step):
         print(f"Running Step: [{step+1}/{n_step}]")
-        train_loss = train(train_loader, loss_function, optimizer, model)
-        test_loss = test(test_loader, loss_function, model)
+        train_loss = train(train_loader, loss_function, optimizer, model, device)
+        test_loss = test(test_loader, loss_function, model, device)
         scheduler.step()
         # sampling
         if draw:
@@ -97,11 +96,15 @@ def main(draw=False):
         if test_loss <= best_loss:
             best_loss = test_loss
             torch.save(model.state_dict(), "nade-binary.pt")
-            print(f"\t[Model Saved] @ Loss: {test_loss:.4f}")
+            print(f"\t[Model Saved]")
             if (step >= 2) and (wait <= 3) and (non_decreasing(test_losses[-3:])):
                 wait += 1
             elif wait > 3:
-                print(f"[Early Stopping] @ Step: {step+1}")
+                print(f"[Early Stopped]")
                 break
             else:
                 continue
+                
+                
+if __name__ == "__main__":
+    main(draw=False)
